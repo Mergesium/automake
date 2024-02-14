@@ -43,11 +43,12 @@ print_usage ()
   cat <<END
 Usage:
   test-driver --test-name NAME --log-file PATH --trs-file PATH
+              --env-name TEST-ENVIRONMENT-NAME
               [--expect-failure {yes|no}] [--color-tests {yes|no}]
               [--enable-hard-errors {yes|no}] [--]
               TEST-SCRIPT [TEST-SCRIPT-ARGUMENTS]
 
-The '--test-name', '--log-file' and '--trs-file' options are mandatory.
+The '--env-name', '--test-name', '--log-file' and '--trs-file' options are mandatory.
 See the GNU Automake documentation for information.
 END
 }
@@ -55,6 +56,7 @@ END
 test_name= # Used for reporting.
 log_file=  # Where to save the output of the test script.
 trs_file=  # Where to save the metadata of the test run.
+env_name=  # Name of the test environment.
 expect_failure=no
 color_tests=no
 enable_hard_errors=yes
@@ -65,6 +67,7 @@ while test $# -gt 0; do
   --test-name) test_name=$2; shift;;
   --log-file) log_file=$2; shift;;
   --trs-file) trs_file=$2; shift;;
+  --env-name) env_name=$2; shift;;
   --color-tests) color_tests=$2; shift;;
   --expect-failure) expect_failure=$2; shift;;
   --enable-hard-errors) enable_hard_errors=$2; shift;;
@@ -79,6 +82,7 @@ missing_opts=
 test x"$test_name" = x && missing_opts="$missing_opts --test-name"
 test x"$log_file"  = x && missing_opts="$missing_opts --log-file"
 test x"$trs_file"  = x && missing_opts="$missing_opts --trs-file"
+test x"$env_name"  = x && missing_opts="$missing_opts --env-name"
 if test x"$missing_opts" != x; then
   usage_error "the following mandatory options are missing:$missing_opts"
 fi
@@ -99,18 +103,25 @@ else
   red= grn= lgn= blu= mgn= std=
 fi
 
-do_exit='rm -f $log_file $trs_file; (exit $st); exit $st'
+do_exit='rm -f $log_file; (exit $st); exit $st'
 trap "st=129; $do_exit" 1
 trap "st=130; $do_exit" 2
 trap "st=141; $do_exit" 13
 trap "st=143; $do_exit" 15
 
+getResults() {
+    estatus=$1
+    time=$4
+}
 # Test script is run here. We create the file first, then append to it,
 # to ameliorate tests themselves also writing to the log file. Our tests
 # don't, but others can (automake bug#35762).
 : >"$log_file"
-"$@" >>"$log_file" 2>&1
-estatus=$?
+getResults $({
+    "$@" >>"$log_file" 2>&1
+    echo $?
+    times
+})
 
 if test $enable_hard_errors = no && test $estatus -eq 99; then
   tweaked_estatus=1
@@ -131,16 +142,49 @@ esac
 # know whether the test passed or failed simply by looking at the '.log'
 # file, without the need of also peaking into the corresponding '.trs'
 # file (automake bug#11814).
-echo "$res $test_name (exit status: $estatus)" >>"$log_file"
+echo "$res $test_name @ $env_name (exit status: $estatus)" >>"$log_file"
 
 # Report outcome to console.
 echo "${col}${res}${std}: $test_name"
 
 # Register the test result, and other relevant metadata.
-echo ":test-result: $res" > $trs_file
-echo ":global-test-result: $res" >> $trs_file
-echo ":recheck: $recheck" >> $trs_file
-echo ":copy-in-global-log: $gcopy" >> $trs_file
+if [ ! -f "$trs_file" ]; then
+    echo ":test-result: $res $env_name $time" > $trs_file
+    echo ":global-test-result: $res" >> $trs_file
+    echo ":recheck: $recheck" >> $trs_file
+    echo ":copy-in-global-log: $gcopy" >> $trs_file
+else
+    mv "$trs_file" "$trs_file.tmp" &&
+    awk -v env_name="$env_name" -v res="$res" -v recheck="$recheck" -v gcopy="$gcopy" -v time="$time" \
+    ' BEGIN { pass = 0; fail = 0; xfail = 0; xpass = 0; error = 0; skip = 0; }
+    END {
+        print ":test-result: " res " " env_name " " time
+        print ":recheck: " recheck
+        print ":copy-in-global-log: " gcopy
+        result = "ERROR-UNKNOWN"
+        if (error) result = "ERROR"
+        else if (xfail) result = "XFAIL"
+        else if (xpass) result = "XPASS"
+        else if (fail) result = "FAIL"
+        else if (pass) result = "PASS"
+        else if (skip) result = "SKIP"
+
+        print ":global-test-result: " result;
+    }
+    /^:test-result: / {
+        switch ($2) {
+            case "PASS": pass++; break
+            case "FAIL": fail++; break
+            case "XPASS": xpass++; break
+            case "XFAIL": xfail++; break
+            case "ERROR": error++; break
+            case "SKIP": skip++; break
+            default: exit 99
+        }
+        if ($3 != env_name) print
+    }
+    ' "$trs_file.tmp" > "$trs_file" && rm -f "$trs_file.tmp"
+fi
 
 # Local Variables:
 # mode: shell-script
