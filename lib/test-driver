@@ -45,6 +45,7 @@ Usage:
   test-driver --test-name NAME --log-file PATH --trs-file PATH
               --env-name TEST-ENVIRONMENT-NAME
               --env--id TEST-ENVIRONMENT-ID
+              --env-keep TEST-ENVIRONMENT-ID,ID2,ID3...
               [--expect-failure {yes|no}] [--color-tests {yes|no}]
               [--enable-hard-errors {yes|no}] [--]
               TEST-SCRIPT [TEST-SCRIPT-ARGUMENTS]
@@ -59,6 +60,7 @@ log_file=  # Where to save the output of the test script.
 trs_file=  # Where to save the metadata of the test run.
 env_name=  # Name of the test environment.
 env_id=  # Unique identifier (hash) of the test environment.
+env_keep= # list of test environment IDs to keep matching :test-results: (if missing, keep all)
 expect_failure=no
 color_tests=no
 enable_hard_errors=yes
@@ -71,6 +73,7 @@ while test $# -gt 0; do
   --trs-file) trs_file=$2; shift;;
   --env-name) env_name=$2; shift;;
   --env-id) env_id=$2; shift;;
+  --env-keep) env_keep=$2; shift;;
   --color-tests) color_tests=$2; shift;;
   --expect-failure) expect_failure=$2; shift;;
   --enable-hard-errors) enable_hard_errors=$2; shift;;
@@ -160,8 +163,12 @@ if [ ! -f "$trs_file" ]; then
     echo ":copy-in-global-log: $gcopy" >> $trs_file
 else
     mv "$trs_file" "$trs_file.tmp" &&
-    awk -v env_name="$env_name" -v env_id="$env_id" -v res="$res" -v recheck="$recheck" -v gcopy="$gcopy" -v time="$time" \
-    ' BEGIN { pass = 0; fail = 0; xfail = 0; xpass = 0; error = 0; skip = 0;
+    awk -v env_name="$env_name" -v env_id="$env_id" -v keep="$env_keep" -v res="$res" -v recheck="$recheck" -v gcopy="$gcopy" -v time="$time" \
+    '
+    function should_keep(value) {
+        return (value != env_id) && (!value || length(keeplist) == 0 || (value in keeplist))
+    }
+    BEGIN { pass = 0; fail = 0; xfail = 0; xpass = 0; error = 0; skip = 0;
         switch (res) {
             case "PASS": pass++; break
             case "FAIL": fail++; break
@@ -171,7 +178,15 @@ else
             case "SKIP": skip++; break
             default: exit 99
         }
-    }
+
+        # Split the string into an array
+        split(keep, keeplist_values, ",")
+
+        # Populate the keeplist array
+        for (i in keeplist_values) {
+            keeplist[keeplist_values[i]] = 1
+        }
+      }
     END {
         print ":test-result: " res " " env_id " " env_name " " time
         print ":recheck: " recheck
@@ -187,7 +202,7 @@ else
         print ":global-test-result: " result;
     }
     /^:test-result: / {
-        if ($3 != env_id) {
+        if (should_keep($3)) {
             print
             switch ($2) {
                 case "PASS": pass++; break
