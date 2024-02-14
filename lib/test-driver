@@ -161,7 +161,17 @@ if [ ! -f "$trs_file" ]; then
 else
     mv "$trs_file" "$trs_file.tmp" &&
     awk -v env_name="$env_name" -v env_id="$env_id" -v res="$res" -v recheck="$recheck" -v gcopy="$gcopy" -v time="$time" \
-    ' BEGIN { pass = 0; fail = 0; xfail = 0; xpass = 0; error = 0; skip = 0; }
+    ' BEGIN { pass = 0; fail = 0; xfail = 0; xpass = 0; error = 0; skip = 0;
+        switch (res) {
+            case "PASS": pass++; break
+            case "FAIL": fail++; break
+            case "XPASS": xpass++; break
+            case "XFAIL": xfail++; break
+            case "ERROR": error++; break
+            case "SKIP": skip++; break
+            default: exit 99
+        }
+    }
     END {
         print ":test-result: " res " " env_id " " env_name " " time
         print ":recheck: " recheck
@@ -177,16 +187,18 @@ else
         print ":global-test-result: " result;
     }
     /^:test-result: / {
-        switch ($2) {
-            case "PASS": pass++; break
-            case "FAIL": fail++; break
-            case "XPASS": xpass++; break
-            case "XFAIL": xfail++; break
-            case "ERROR": error++; break
-            case "SKIP": skip++; break
-            default: exit 99
+        if ($3 != env_id) {
+            print
+            switch ($2) {
+                case "PASS": pass++; break
+                case "FAIL": fail++; break
+                case "XPASS": xpass++; break
+                case "XFAIL": xfail++; break
+                case "ERROR": error++; break
+                case "SKIP": skip++; break
+                default: exit 99
+            }
         }
-        if ($3 != env_id) print
     }
     ' "$trs_file.tmp" > "$trs_file" && rm -f "$trs_file.tmp"
 fi
