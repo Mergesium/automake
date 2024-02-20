@@ -142,6 +142,7 @@ case $tweaked_estatus:$expect_failure in
   0:*)   col=$grn res=PASS  recheck=no  gcopy=no;;
   77:*)  col=$blu res=SKIP  recheck=no  gcopy=yes;;
   99:*)  col=$mgn res=ERROR recheck=yes gcopy=yes;;
+  127:*) col=$mgn res=ERROR recheck=yes gcopy=yes;;
   *:yes) col=$lgn res=XFAIL recheck=no  gcopy=yes;;
   *:*)   col=$red res=FAIL  recheck=yes gcopy=yes;;
 esac
