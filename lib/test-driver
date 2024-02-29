@@ -163,7 +163,7 @@ if [ ! -f "$trs_file" ]; then
     echo ":recheck: $recheck" >> $trs_file
     echo ":copy-in-global-log: $gcopy" >> $trs_file
 else
-    mv "$trs_file" "$trs_file.tmp" &&
+    cp -f "$trs_file" "$trs_file.tmp" &&
     awk -v env_name="$env_name" -v env_id="$env_id" -v keep="$env_keep" -v res="$res" -v recheck="$recheck" -v gcopy="$gcopy" -v time="$time" \
     '
     function should_keep(value) {
